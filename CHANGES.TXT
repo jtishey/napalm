@@ -1,0 +1,31 @@
+Changes from the main NAPALM release
+=====================================
+
+Added NAPALM.py to handle driver import and connection
+    USE:  from napalm import NAPALM
+          dev = NAPALM.open('hostname')
+
+    Requires 2 custom packages: ltoken and get_os to provide
+    information needed by the driver.
+
+
+Modified napalm/ios/ios.py to allow sending config commands
+    Doesn't follow the abstraction model of NAPALM for configuring
+    devices, but the method of copying a config file with specific
+    structure and then doing a merge/replace is very uncomfortable.
+
+    USE: dev.config_commands(['list of', 'config commands'])
+    RETURNS: String output from the list of config commands
+    NEW METHOD: config_commands = Type check list and call _send_config_set wrapper
+               _send_config_set = Execute via netmiko "send_config_set"
+
+
+Modified napalm/ios/ios.py to allow saving running config to startup
+    Because of the previous modification, provide a way to save config
+    
+    USE: dev.write_memory()
+    RETRUNS: String output of the "write memory" command
+    NEW METHOD: write_memory - Execute "write memory" via netmiko "save_config"
+
+
+
