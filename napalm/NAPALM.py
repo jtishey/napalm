@@ -25,16 +25,14 @@ def open(dev):
 
     You'll now have an open connection to the device vSRX1
 
-    Requires customer modules ltoken and get_os
+    Requires 2 custom modules ltoken and get_os
     """
 
     auth_info = ltoken()
     dev_os = get_os(dev, format='napalm')
-    
-    # Verify & Convert the dev_os to what napalm wants:
     if 'Unable' in dev_os:
         print(dev_os)
-        exit(1)
+        return
 
     driver = get_network_driver(dev_os)
 

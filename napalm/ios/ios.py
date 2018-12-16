@@ -167,6 +167,17 @@ class IOSDriver(NetworkDriver):
         except (socket.error, EOFError) as e:
             raise ConnectionClosedException(str(e))
 
+    def _send_config_set(self, command):
+        """Wrapper for self.device.send_config_set().
+
+        Requires a list of configuration commands
+        """
+        try:
+            output = self.device.send_config_set(command)
+            return output
+        except (socket.error, EOFError) as e:
+            raise ConnectionClosedException(str(e))
+
     def is_alive(self):
         """Returns a flag with the state of the connection."""
         null = chr(0)
@@ -1693,6 +1704,35 @@ class IOSDriver(NetworkDriver):
             arp_table.append(entry)
         return arp_table
 
+    def config_commands(self, commands):
+        """ Execute a list of configuration commands and return the output as a string
+
+        Example input:
+        ['interface Gi3', 'description horse','no shutdown']
+
+        Output example:
+        config term
+        Enter configuration commands, one per line.  End with CNTL/Z.
+        IOS-R1(config)#interface Gi3
+        IOS-R1(config-if)#description horse
+        IOS-R1(config-if)#no shutdown
+        IOS-R1(config-if)#end
+        IOS-R1#
+
+        """
+        if type(commands) is not list:
+            raise TypeError('Please enter a valid list of commands!')
+        cfg_output = self._send_config_set(commands)
+        return cfg_output
+
+    def write_memory(self):
+        """Sends "wr mem" to the device to save the running config """
+        try:
+            output = self.device.save_config()
+            return output
+        except (socket.error, EOFError) as e:
+            raise ConnectionClosedException(str(e))
+    
     def cli(self, commands):
         """
         Execute a list of commands and return the output in a dictionary format using the command
