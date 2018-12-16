@@ -10,34 +10,35 @@ John Tishey - 2018
 
 from napalm import get_network_driver
 from ltoken import ltoken
+from get_os import get_os
 
-
-def open(dev, dev_os):
+def open(dev):
     """
     Open a connection to a network device using NAPALM
     Created so I don't have to keep remembering the format/os_types
     As well as trying telnet each time before SSH for IOS to avoid 
     paramiko errors on IOS devices that don't have SSH properly configured.
 
-    Supports ios, iosxr, junos, and nxos device types
-
-    Example:  
-    from napalm import napalm_connection
-    device = napalm_connection('vSRX1', junos)
+    Example:
+    from napalm import NAPALM
+    device = NAPALM.open('vSRX1')
 
     You'll now have an open connection to the device vSRX1
+
+    Requires customer modules ltoken and get_os
     """
+
     auth_info = ltoken()
-    # Convert the dev_os to a stadard format needed by napalm
-    if dev_os == 'XR':
-        dev_os = 'iosxr'
-    elif dev_os == 'JUNIPER':
-        dev_os = 'junos'
-    else:
-        dev_os = dev_os.lower()
+    dev_os = get_os(dev, format='napalm')
     
+    # Verify & Convert the dev_os to what napalm wants:
+    if 'Unable' in dev_os:
+        print(dev_os)
+        exit(1)
+
     driver = get_network_driver(dev_os)
 
+    # Try telnet first for IOS so paramiko doesn't barf
     if dev_os == 'ios':
         try:
             device = driver(dev, auth_info['username'], auth_info['password'], optional_args={'transport':'telnet'})
