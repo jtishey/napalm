@@ -1725,7 +1725,7 @@ class IOSDriver(NetworkDriver):
         cfg_output = self._send_config_set(commands)
         return cfg_output
 
-    def write_memory(self):
+    def save_config(self):
         """Sends "wr mem" to the device to save the running config """
         try:
             output = self.device.save_config()

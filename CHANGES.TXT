@@ -23,9 +23,10 @@ Modified napalm/ios/ios.py to allow sending config commands
 Modified napalm/ios/ios.py to allow saving running config to startup
     Because of the previous modification, provide a way to save config
     
-    USE: dev.write_memory()
+    USE: dev.save_config()
     RETRUNS: String output of the "write memory" command
-    NEW METHOD: write_memory - Execute "write memory" via netmiko "save_config"
+    NEW METHOD: save_config - Execute "write memory" via netmiko "save_config"
 
 
-
+Added napalm/sros to add some basic functionality for Nokia SR-OS
+    Modified base.py to not check for enable mode on SROS because of some issues checking that
