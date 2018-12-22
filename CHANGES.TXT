@@ -30,3 +30,28 @@ Modified napalm/ios/ios.py to allow saving running config to startup
 
 Added napalm/sros to add some basic functionality for Nokia SR-OS
     Modified base.py to not check for enable mode on SROS because of some issues checking that
+
+
+Modified napalm/ios/ios.py to support "get_bgp_config()" getter already found in junos/iosxr.
+    USE: dev.get_bgp_config()
+    RETURNS: A dict of bgp config attributes from the device running conifg
+    NEW METHOD: get_bgp_config
+
+Modified napalm/helpers.py  to support some functions needed for IOS get_bgp_config getter
+    NEW IMPORT: from ciscoconfparse import CiscoConfParse
+
+    NEW FUNCTION: cisco_conf_parse_parents()
+    REQUIRES: config_to_parse, parent_line_pattern, child_line_pattern
+    RETURNS: A list of parent lines that have a matching child line
+    REASON FOR ADDING: input BGP config, 'address-family', neighbor to get the BGP AFI a neighbor is under
+
+    NEW FUNCTION: cisco_conf_parse_objects()
+    REQUIRES: config_to_parse, pattern_to_match
+    RETURNS: A list of the parent line text and all it's child line text
+    REASON FOR ADDING: Get a section of IOS config like "router bgp" or a specific neighbor config
+
+    NEW FUNCTION: regex_find_text()
+    REQUIRES: text_to_parse, regex_pattern, match_group
+    RETURNS: String of all matched text, or specific match group if used, or empty if no match
+    REASON FOR ADDING: Parse IOS config lines for a value similar to TextFSM structure
+
