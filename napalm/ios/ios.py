@@ -167,17 +167,6 @@ class IOSDriver(NetworkDriver):
         except (socket.error, EOFError) as e:
             raise ConnectionClosedException(str(e))
 
-    def _send_config_set(self, command):
-        """Wrapper for self.device.send_config_set().
-
-        Requires a list of configuration commands
-        """
-        try:
-            output = self.device.send_config_set(command)
-            return output
-        except (socket.error, EOFError) as e:
-            raise ConnectionClosedException(str(e))
-
     def is_alive(self):
         """Returns a flag with the state of the connection."""
         null = chr(0)
@@ -1146,29 +1135,33 @@ class IOSDriver(NetworkDriver):
                     all_neighbors.add(re.search(IP_ADDR_REGEX, line).group())
                 elif re.search(IPV6_ADDR_REGEX_2, line) is not None:
                     all_neighbors.add(re.search(IPV6_ADDR_REGEX_2, line).group())
-                else:
-                    bgp_group = re.search(r' neighbor [^\s]+', line).group()
-                    bgp_group = bgp_group.split()[1]
-                    all_groups.add(bgp_group)
+                #else:
+                #    bgp_group = re.search(r' neighbor [^\s]+', line).group()
+                #    bgp_group = bgp_group.split()[1]
+                #    all_groups.add(bgp_group)
 
         # Get the neighrbor level config for each neighbor
         for neighbor in all_neighbors:
-            afi_list = napalm.base.helpers.cisco_conf_parse_parents(cfg, r'\s+address-family.*', neighbor)
+            afi_list = napalm.base.helpers.cisco_conf_parse_parents(bgp_config_text, r'\s+address-family.*', neighbor)
             for afi in afi_list:
+                # Gets neighbor config specific to a VRF to avoid neighbor IP conflicts
                 if 'vrf' in afi:
                     neighbor_config = []
-                    afi_config = napalm.base.helpers.cisco_conf_parse_objects(cfg, afi)
+                    afi_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, afi)
                     for line in afi_config:
                         if neighbor in line:
                             neighbor_config.append(line)
+                # If it's not in a VRF, just get all the neighbor config
                 else:
-                    neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(cfg, neighbor)
+                    neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, neighbor)
+                # For group_name- use peer-group name, else VRF name, else "_" for no group
                 group_name = napalm.base.helpers.regex_find_text(' peer-group ([^\']+)', neighbor_config, group=0)
                 if not group_name:
                     if 'vrf' in afi:
                         group_name = afi.split()[-1]
                     else:
                         group_name = '_'
+                # Start finding attributes for the neighbor config
                 description = napalm.base.helpers.regex_find_text(r' description ([^\']+)\'', neighbor_config, group=0)
                 peer_as = napalm.base.helpers.regex_find_text(r' remote-as (\d+)', neighbor_config, group=0)
                 prefix_limit = napalm.base.helpers.regex_find_text(r'maximum-prefix (\d+) \d+ \w+ \d+', neighbor_config, group=0)
@@ -1182,8 +1175,11 @@ class IOSDriver(NetworkDriver):
                 nhs = bool(napalm.base.helpers.regex_find_text(r' next-hop-self', neighbor_config, group=0))
                 route_reflector_client = bool(napalm.base.helpers.regex_find_text(r'route-reflector-client', neighbor_config, group=0))
 
+                # Add the group name to bgp_group_neighbors if its not there already
                 if group_name not in bgp_group_neighbors.keys():
                     bgp_group_neighbors[group_name] = {}
+
+                # Build the neighbor dict of attributes
                 bgp_group_neighbors[group_name][neighbor] = {
                     'description': description,
                     'remote_as': peer_as,
@@ -1197,13 +1193,37 @@ class IOSDriver(NetworkDriver):
                     'nhs': nhs,
                     'route_reflector_client': route_reflector_client
                 }
+            # Don't loop AFI multiple times if its not a VRF
+            if 'vrf' not in afi:
+                break
 
         # Get the peer-group level config for each group
-        for group_name in all_groups:
-            neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(cfg, group_name)
-            afi = napalm.base.helpers.cisco_conf_parse_parents(neighbor_config, r'\s+address-family.*', neighbor)
-            afi_config = napalm.base.helpers.cisco_conf_parse_objects(cfg, afi)
-            multipath = bool(napalm.base.helpers.regex_find_text(r' multipath', afi_config, group=0))
+        for group_name in bgp_group_neighbors.keys():
+            if group_name == '_':
+                bgp_config['_'] = {
+                    'apply_groups': [],
+                    'description': '',
+                    'local_as': 0,
+                    'type': '',
+                    'import_policy': '',
+                    'export_policy': '',
+                    'local_address': '',
+                    'multipath': False,
+                    'multihop_ttl': 0,
+                    'remote_as': 0,
+                    'remove_private_as': False,
+                    'prefix_limit': {},
+                    'neighbors': bgp_group_neighbors.get('_', {})
+                }
+                continue
+            neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, group_name)
+            multipath = False
+            afi_list = napalm.base.helpers.cisco_conf_parse_parents(neighbor_config, r'\s+address-family.*', group_name)
+            for afi in afi_list:
+                afi_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, afi)
+                multipath = bool(napalm.base.helpers.regex_find_text(r' multipath', str(afi_config), group=0))
+                if multipath:
+                    break
             description = napalm.base.helpers.regex_find_text(r' description ([^\']+)\'', neighbor_config, group=0)
             local_as = napalm.base.helpers.regex_find_text(r'local-as (\d+)', neighbor_config, group=0)
             import_policy = napalm.base.helpers.regex_find_text(r'route-map ([^\s]+) in', neighbor_config, group=0)
@@ -1860,35 +1880,7 @@ class IOSDriver(NetworkDriver):
             arp_table.append(entry)
         return arp_table
 
-    def config_commands(self, commands):
-        """ Execute a list of configuration commands and return the output as a string
 
-        Example input:
-        ['interface Gi3', 'description horse','no shutdown']
-
-        Output example:
-        config term
-        Enter configuration commands, one per line.  End with CNTL/Z.
-        IOS-R1(config)#interface Gi3
-        IOS-R1(config-if)#description horse
-        IOS-R1(config-if)#no shutdown
-        IOS-R1(config-if)#end
-        IOS-R1#
-
-        """
-        if type(commands) is not list:
-            raise TypeError('Please enter a valid list of commands!')
-        cfg_output = self._send_config_set(commands)
-        return cfg_output
-
-    def save_config(self):
-        """Sends "wr mem" to the device to save the running config """
-        try:
-            output = self.device.save_config()
-            return output
-        except (socket.error, EOFError) as e:
-            raise ConnectionClosedException(str(e))
-    
     def cli(self, commands):
         """
         Execute a list of commands and return the output in a dictionary format using the command
