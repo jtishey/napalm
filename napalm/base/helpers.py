@@ -90,7 +90,7 @@ def load_template(cls, template_name, template_source=None, template_path=None,
         )
     return cls.load_merge_candidate(config=configuration)
 
-def cisco_conf_parse_parents(config, parent, child):
+def cisco_conf_parse_parents(parent, child, config):
     """ Use CiscoConfParse to find parents with a child string """
     if type(config) == str:
         config = config.splitlines()
@@ -98,7 +98,7 @@ def cisco_conf_parse_parents(config, parent, child):
     cfg_obj = parse.find_parents_w_child(parent, child)
     return cfg_obj
 
-def cisco_conf_parse_objects(config, cfg_section):
+def cisco_conf_parse_objects(cfg_section, config):
     """ Use CiscoConfParse to find objects in running config."""
     return_config = []
     if type(config) is str:

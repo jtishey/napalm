@@ -1116,7 +1116,7 @@ class IOSDriver(NetworkDriver):
         # Get BGP config using ciscoconfparse because some old devices dont support "| sec bgp"
         cfg = self.get_config(retrieve='startup')
         cfg = cfg['startup'].splitlines()
-        bgp_config_text = napalm.base.helpers.cisco_conf_parse_objects(cfg, 'router bgp')
+        bgp_config_text = napalm.base.helpers.cisco_conf_parse_objects('router bgp', cfg)
         bgp_asn = napalm.base.helpers.regex_find_text(r'router bgp (\d+)',
                                                       bgp_config_text, group=0)
         
@@ -1143,14 +1143,14 @@ class IOSDriver(NetworkDriver):
                 if bgp_neighbor != neighbor:
                     continue
             afi_list = napalm.base.helpers.cisco_conf_parse_parents(
-                    bgp_config_text, r'\s+address-family.*', bgp_neighbor)
+                    r'\s+address-family.*', bgp_neighbor, bgp_config_text)
             afi = afi_list[0]
             # Gets neighbor config specific to a VRF to avoid neighbor IP conflicts
             if 'vrf' in str(afi_list):
                 continue
             else:
                 neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(
-                        bgp_config_text, bgp_neighbor)
+                        bgp_neighbor, bgp_config_text)
             # For group_name- use peer-group name, else VRF name, else "_" for no group
             group_name = napalm.base.helpers.regex_find_text(
                     ' peer-group ([^\']+)', neighbor_config, group=0)
@@ -1225,13 +1225,13 @@ class IOSDriver(NetworkDriver):
                 }
                 continue
             neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(
-                    bgp_config_text, group_name)
+                    group_name, bgp_config_text)
             multipath = False
             afi_list = napalm.base.helpers.cisco_conf_parse_parents(
-                    neighbor_config, r'\s+address-family.*', group_name)
+                    r'\s+address-family.*', group_name, neighbor_config)
             for afi in afi_list:
                 afi_config = napalm.base.helpers.cisco_conf_parse_objects(
-                        bgp_config_text, afi)
+                        afi, bgp_config_text)
                 multipath = bool(napalm.base.helpers.regex_find_text(
                         r' multipath', str(afi_config), group=0))
                 if multipath:
