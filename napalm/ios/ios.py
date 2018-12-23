@@ -1077,7 +1077,6 @@ class IOSDriver(NetworkDriver):
     def get_bgp_config(self, group='', neighbor=''):
         """
         Parse BGP config params into a dict
-            params not supported yet
             :param group='': 
             :param neighbor='':
         """   
@@ -1138,16 +1137,20 @@ class IOSDriver(NetworkDriver):
                     all_groups.add(bgp_group)
 
         # Get the neighrbor level config for each neighbor
-        for neighbor in all_neighbors:
+        for bgp_neighbor in all_neighbors:
+            # If neighbor_filter is passed in, only continue for that neighbor
+            if neighbor:
+                if bgp_neighbor != neighbor:
+                    continue
             afi_list = napalm.base.helpers.cisco_conf_parse_parents(
-                    bgp_config_text, r'\s+address-family.*', neighbor)
+                    bgp_config_text, r'\s+address-family.*', bgp_neighbor)
             afi = afi_list[0]
             # Gets neighbor config specific to a VRF to avoid neighbor IP conflicts
             if 'vrf' in str(afi_list):
                 continue
             else:
                 neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(
-                        bgp_config_text, neighbor)
+                        bgp_config_text, bgp_neighbor)
             # For group_name- use peer-group name, else VRF name, else "_" for no group
             group_name = napalm.base.helpers.regex_find_text(
                     ' peer-group ([^\']+)', neighbor_config, group=0)
@@ -1184,7 +1187,7 @@ class IOSDriver(NetworkDriver):
                 bgp_group_neighbors[group_name] = {}
 
             # Build the neighbor dict of attributes
-            bgp_group_neighbors[group_name][neighbor] = {
+            bgp_group_neighbors[group_name][bgp_neighbor] = {
                 'description': description,
                 'remote_as': peer_as,
                 'prefix_limit': build_prefix_limit(
@@ -1200,6 +1203,10 @@ class IOSDriver(NetworkDriver):
 
         # Get the peer-group level config for each group
         for group_name in bgp_group_neighbors.keys():
+            # If a group is passed in params, only continue on that group
+            if group:
+                if group_name != group:
+                    continue
             if group_name == '_':
                 bgp_config['_'] = {
                     'apply_groups': [],
