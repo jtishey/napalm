@@ -1088,7 +1088,6 @@ class IOSDriver(NetworkDriver):
             prefix_limit = {}
             inet = False
             inet6 = False
-            vrf = False
             preifx_type = 'inet'
             if isinstance(af_table, list):
                 af_table = str(af_table)
@@ -1097,8 +1096,6 @@ class IOSDriver(NetworkDriver):
             if 'ipv6' in af_table.lower():
                 inet6 = True
                 preifx_type = 'inet6'
-            if ' vrf ' in af_table.lower():
-                vrf = True
             if len(af_table.split()) == 2:
                 safi = 'unicast'
             else:
@@ -1112,8 +1109,7 @@ class IOSDriver(NetworkDriver):
                                 'threshold': prefix_percent,
                                 'timeout': prefix_timeout
                             }
-                        },
-                        'vrf': vrf
+                        }
                     }
                 }
             return prefix_limit
@@ -1122,7 +1118,8 @@ class IOSDriver(NetworkDriver):
         cfg = self.get_config(retrieve='startup')
         cfg = cfg['startup'].splitlines()
         bgp_config_text = napalm.base.helpers.cisco_conf_parse_objects(cfg, 'router bgp')
-        bgp_asn = napalm.base.helpers.regex_find_text(r'router bgp (\d+)', bgp_config_text, group=0)
+        bgp_asn = napalm.base.helpers.regex_find_text(r'router bgp (\d+)',
+                                                      bgp_config_text, group=0)
         
         # Get a list of all neighbors and groups in the config
         all_neighbors = set()
@@ -1135,67 +1132,71 @@ class IOSDriver(NetworkDriver):
                     all_neighbors.add(re.search(IP_ADDR_REGEX, line).group())
                 elif re.search(IPV6_ADDR_REGEX_2, line) is not None:
                     all_neighbors.add(re.search(IPV6_ADDR_REGEX_2, line).group())
-                #else:
-                #    bgp_group = re.search(r' neighbor [^\s]+', line).group()
-                #    bgp_group = bgp_group.split()[1]
-                #    all_groups.add(bgp_group)
+                else:
+                    bgp_group = re.search(r' neighbor [^\s]+', line).group()
+                    bgp_group = bgp_group.split()[1]
+                    all_groups.add(bgp_group)
 
         # Get the neighrbor level config for each neighbor
         for neighbor in all_neighbors:
-            afi_list = napalm.base.helpers.cisco_conf_parse_parents(bgp_config_text, r'\s+address-family.*', neighbor)
-            for afi in afi_list:
-                # Gets neighbor config specific to a VRF to avoid neighbor IP conflicts
-                if 'vrf' in afi:
-                    neighbor_config = []
-                    afi_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, afi)
-                    for line in afi_config:
-                        if neighbor in line:
-                            neighbor_config.append(line)
-                # If it's not in a VRF, just get all the neighbor config
-                else:
-                    neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, neighbor)
-                # For group_name- use peer-group name, else VRF name, else "_" for no group
-                group_name = napalm.base.helpers.regex_find_text(' peer-group ([^\']+)', neighbor_config, group=0)
-                if not group_name:
-                    if 'vrf' in afi:
-                        group_name = afi.split()[-1]
-                    else:
-                        group_name = '_'
-                # Start finding attributes for the neighbor config
-                description = napalm.base.helpers.regex_find_text(r' description ([^\']+)\'', neighbor_config, group=0)
-                peer_as = napalm.base.helpers.regex_find_text(r' remote-as (\d+)', neighbor_config, group=0)
-                prefix_limit = napalm.base.helpers.regex_find_text(r'maximum-prefix (\d+) \d+ \w+ \d+', neighbor_config, group=0)
-                prefix_percent = napalm.base.helpers.regex_find_text(r'maximum-prefix \d+ (\d+) \w+ \d+', neighbor_config, group=0)
-                prefix_timeout = napalm.base.helpers.regex_find_text(r'maximum-prefix \d+ \d+ \w+ (\d+)', neighbor_config, group=0)
-                export_policy = napalm.base.helpers.regex_find_text(r'route-map ([^\s]+) out', neighbor_config, group=0)
-                import_policy = napalm.base.helpers.regex_find_text(r'route-map ([^\s]+) in', neighbor_config, group=0)
-                local_address = napalm.base.helpers.regex_find_text(r' update-source (\w+)', neighbor_config, group=0)
-                local_as = napalm.base.helpers.regex_find_text(r'local-as (\d+)', neighbor_config, group=0)
-                password = napalm.base.helpers.regex_find_text(r'password (?:[0-9] )?([^\']+\')', neighbor_config, group=0)
-                nhs = bool(napalm.base.helpers.regex_find_text(r' next-hop-self', neighbor_config, group=0))
-                route_reflector_client = bool(napalm.base.helpers.regex_find_text(r'route-reflector-client', neighbor_config, group=0))
+            afi_list = napalm.base.helpers.cisco_conf_parse_parents(
+                    bgp_config_text, r'\s+address-family.*', neighbor)
+            afi = afi_list[0]
+            # Gets neighbor config specific to a VRF to avoid neighbor IP conflicts
+            if 'vrf' in str(afi_list):
+                continue
+            else:
+                neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(
+                        bgp_config_text, neighbor)
+            # For group_name- use peer-group name, else VRF name, else "_" for no group
+            group_name = napalm.base.helpers.regex_find_text(
+                    ' peer-group ([^\']+)', neighbor_config, group=0)
+            if not group_name:
+                group_name = '_'
+            # Start finding attributes for the neighbor config
+            description = napalm.base.helpers.regex_find_text(
+                    r' description ([^\']+)\'', neighbor_config, group=0)
+            peer_as = napalm.base.helpers.regex_find_text(
+                    r' remote-as (\d+)', neighbor_config, group=0)
+            prefix_limit = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix (\d+) \d+ \w+ \d+', neighbor_config, group=0)
+            prefix_percent = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix \d+ (\d+) \w+ \d+', neighbor_config, group=0)
+            prefix_timeout = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix \d+ \d+ \w+ (\d+)', neighbor_config, group=0)
+            export_policy = napalm.base.helpers.regex_find_text(
+                    r'route-map ([^\s]+) out', neighbor_config, group=0)
+            import_policy = napalm.base.helpers.regex_find_text(
+                    r'route-map ([^\s]+) in', neighbor_config, group=0)
+            local_address = napalm.base.helpers.regex_find_text(
+                    r' update-source (\w+)', neighbor_config, group=0)
+            local_as = napalm.base.helpers.regex_find_text(
+                    r'local-as (\d+)', neighbor_config, group=0)
+            password = napalm.base.helpers.regex_find_text(
+                    r'password (?:[0-9] )?([^\']+\')', neighbor_config, group=0)
+            nhs = bool(napalm.base.helpers.regex_find_text(
+                    r' next-hop-self', neighbor_config, group=0))
+            route_reflector_client = bool(napalm.base.helpers.regex_find_text(
+                    r'route-reflector-client', neighbor_config, group=0))
 
-                # Add the group name to bgp_group_neighbors if its not there already
-                if group_name not in bgp_group_neighbors.keys():
-                    bgp_group_neighbors[group_name] = {}
+            # Add the group name to bgp_group_neighbors if its not there already
+            if group_name not in bgp_group_neighbors.keys():
+                bgp_group_neighbors[group_name] = {}
 
-                # Build the neighbor dict of attributes
-                bgp_group_neighbors[group_name][neighbor] = {
-                    'description': description,
-                    'remote_as': peer_as,
-                    'prefix_limit': build_prefix_limit(
-                        afi, prefix_limit, prefix_percent, prefix_timeout),
-                    'export_policy': export_policy,
-                    'import_policy': import_policy,
-                    'local_address': local_address,
-                    'local_as': local_as,
-                    'authentication_key': password,
-                    'nhs': nhs,
-                    'route_reflector_client': route_reflector_client
-                }
-            # Don't loop AFI multiple times if its not a VRF
-            if 'vrf' not in afi:
-                break
+            # Build the neighbor dict of attributes
+            bgp_group_neighbors[group_name][neighbor] = {
+                'description': description,
+                'remote_as': peer_as,
+                'prefix_limit': build_prefix_limit(
+                    afi, prefix_limit, prefix_percent, prefix_timeout),
+                'export_policy': export_policy,
+                'import_policy': import_policy,
+                'local_address': local_address,
+                'local_as': local_as,
+                'authentication_key': password,
+                'nhs': nhs,
+                'route_reflector_client': route_reflector_client
+            }
 
         # Get the peer-group level config for each group
         for group_name in bgp_group_neighbors.keys():
@@ -1216,25 +1217,40 @@ class IOSDriver(NetworkDriver):
                     'neighbors': bgp_group_neighbors.get('_', {})
                 }
                 continue
-            neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, group_name)
+            neighbor_config = napalm.base.helpers.cisco_conf_parse_objects(
+                    bgp_config_text, group_name)
             multipath = False
-            afi_list = napalm.base.helpers.cisco_conf_parse_parents(neighbor_config, r'\s+address-family.*', group_name)
+            afi_list = napalm.base.helpers.cisco_conf_parse_parents(
+                    neighbor_config, r'\s+address-family.*', group_name)
             for afi in afi_list:
-                afi_config = napalm.base.helpers.cisco_conf_parse_objects(bgp_config_text, afi)
-                multipath = bool(napalm.base.helpers.regex_find_text(r' multipath', str(afi_config), group=0))
+                afi_config = napalm.base.helpers.cisco_conf_parse_objects(
+                        bgp_config_text, afi)
+                multipath = bool(napalm.base.helpers.regex_find_text(
+                        r' multipath', str(afi_config), group=0))
                 if multipath:
                     break
-            description = napalm.base.helpers.regex_find_text(r' description ([^\']+)\'', neighbor_config, group=0)
-            local_as = napalm.base.helpers.regex_find_text(r'local-as (\d+)', neighbor_config, group=0)
-            import_policy = napalm.base.helpers.regex_find_text(r'route-map ([^\s]+) in', neighbor_config, group=0)
-            export_policy = napalm.base.helpers.regex_find_text(r'route-map ([^\s]+) out', neighbor_config, group=0)
-            local_address = napalm.base.helpers.regex_find_text(r' update-source (\w+)', neighbor_config, group=0)
-            multihop_ttl = napalm.base.helpers.regex_find_text(r'ebgp-multihop {\d+}', neighbor_config, group=0)
-            peer_as = napalm.base.helpers.regex_find_text(r' remote-as (\d+)', neighbor_config, group=0)
-            remove_private_as = bool(napalm.base.helpers.regex_find_text(r'remove-private-as', neighbor_config, group=0))
-            prefix_limit = napalm.base.helpers.regex_find_text(r'maximum-prefix (\d+) \d+ \w+ \d+', neighbor_config, group=0)
-            prefix_percent = napalm.base.helpers.regex_find_text(r'maximum-prefix \d+ (\d+) \w+ \d+', neighbor_config, group=0)
-            prefix_timeout = napalm.base.helpers.regex_find_text(r'maximum-prefix \d+ \d+ \w+ (\d+)', neighbor_config, group=0)
+            description = napalm.base.helpers.regex_find_text(
+                    r' description ([^\']+)\'', neighbor_config, group=0)
+            local_as = napalm.base.helpers.regex_find_text(
+                    r'local-as (\d+)', neighbor_config, group=0)
+            import_policy = napalm.base.helpers.regex_find_text(
+                    r'route-map ([^\s]+) in', neighbor_config, group=0)
+            export_policy = napalm.base.helpers.regex_find_text(
+                    r'route-map ([^\s]+) out', neighbor_config, group=0)
+            local_address = napalm.base.helpers.regex_find_text(
+                    r' update-source (\w+)', neighbor_config, group=0)
+            multihop_ttl = napalm.base.helpers.regex_find_text(
+                    r'ebgp-multihop {\d+}', neighbor_config, group=0)
+            peer_as = napalm.base.helpers.regex_find_text(
+                    r' remote-as (\d+)', neighbor_config, group=0)
+            remove_private_as = bool(napalm.base.helpers.regex_find_text(
+                    r'remove-private-as', neighbor_config, group=0))
+            prefix_limit = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix (\d+) \d+ \w+ \d+', neighbor_config, group=0)
+            prefix_percent = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix \d+ (\d+) \w+ \d+', neighbor_config, group=0)
+            prefix_timeout = napalm.base.helpers.regex_find_text(
+                    r'maximum-prefix \d+ \d+ \w+ (\d+)', neighbor_config, group=0)
             bgp_type = 'external'
             if local_as:
                 if local_as == peer_as:
